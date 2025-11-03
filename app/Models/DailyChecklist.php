@@ -70,7 +70,7 @@ class DailyChecklist extends Model
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id', 'system_user_id');
+        return $this->belongsTo(User::class, 'user_id', 'id');
     }
 
     /**
@@ -78,7 +78,7 @@ class DailyChecklist extends Model
      */
     public function reviewer(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'reviewed_by', 'system_user_id');
+        return $this->belongsTo(User::class, 'reviewed_by', 'id');
     }
 
     /**
