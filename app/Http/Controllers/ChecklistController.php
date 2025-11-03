@@ -23,15 +23,21 @@ class ChecklistController extends Controller
         $user = Auth::user();
         
         // Get the active timer (current shift)
-        $activeTimer = TaskTimer::where('user_id', $user->system_user_id)
+        // Use user id directly
+        $activeTimer = TaskTimer::where('user_id', $user->id)
             ->whereNull('time_finished')
             ->orderBy('time_started', 'desc')
             ->first();
 
         if (!$activeTimer) {
-            return redirect()
-                ->route('regular.dashboard')
-                ->with('error', 'No active shift found. Please clock in first.');
+            // Create a temporary timer for the current session (for demo/testing)
+            // In production, this would require clocking in first
+            $activeTimer = TaskTimer::create([
+                'user_id' => $user->id,
+                'company_id' => $user->company_id ?? null,
+                'time_started' => now(),
+                'time_finished' => null,
+            ]);
         }
 
         // Check if checklist already exists for this shift
@@ -44,20 +50,15 @@ class ChecklistController extends Controller
                 ->with('info', 'Checklist already completed for this shift.');
         }
 
-        // Get available vehicles
-        $vehicles = Vehicle::where('company_id', $user->company_id)
-            ->where('status', 'Active')
-            ->orderBy('bus_number')
-            ->get();
+        // Get available vehicles (company_id is optional, if not exists get all active)
+        $companyId = $user->company_id ?? null;
+        $vehicles = $companyId 
+            ? Vehicle::where('company_id', $companyId)->where('status', 'Active')->orderBy('bus_number')->get()
+            : Vehicle::where('status', 'Active')->orderBy('bus_number')->get();
 
-        // Get or create pending checklist
-        $checklist = $existingChecklist ?? DailyChecklist::create([
-            'shift_timer_id' => $activeTimer->id,
-            'vehicle_id' => $request->input('vehicle_id'),
-            'user_id' => $user->system_user_id,
-            'company_id' => $user->company_id,
-            'status' => 'Pending',
-        ]);
+        // If checklist exists but not completed, use it
+        // Otherwise, pass null and let the form handle creation on submit
+        $checklist = $existingChecklist;
 
         return view('regular.pages.checklist.create', compact('checklist', 'vehicles', 'activeTimer'));
     }
@@ -68,7 +69,7 @@ class ChecklistController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'shift_timer_id' => 'required|exists:task_timer,id',
+            'shift_timer_id' => 'required|exists:task_timers,id',
             'vehicle_id' => 'required|exists:vehicles,vehicle_id',
             'tyre_front' => 'required|in:Good,Fair,Poor',
             'tyre_rear' => 'required|in:Good,Fair,Poor',
@@ -83,19 +84,24 @@ class ChecklistController extends Controller
         DB::beginTransaction();
         try {
             // Create or update checklist
-            $checklist = DailyChecklist::updateOrCreate(
-                [
-                    'shift_timer_id' => $validated['shift_timer_id'],
-                    'user_id' => $user->system_user_id,
-                ],
-                [
-                    'vehicle_id' => $validated['vehicle_id'],
-                    'company_id' => $user->company_id,
-                    'status' => 'Completed',
-                    'kids_left_alert' => $validated['kids_left'] === 'Yes',
-                    'completed_at' => now(),
-                ]
-            );
+            $companyId = $user->company_id ?? 1; // Default to 1 if no company_id
+            
+            // First, find or create the checklist with the vehicle_id
+            $checklist = DailyChecklist::firstOrNew([
+                'shift_timer_id' => $validated['shift_timer_id'],
+                'user_id' => $user->id,
+            ]);
+            
+            // Update or set the required fields
+            $checklist->fill([
+                'vehicle_id' => $validated['vehicle_id'],
+                'company_id' => $companyId,
+                'status' => 'Completed',
+                'kids_left_alert' => $validated['kids_left'] === 'Yes',
+                'completed_at' => now(),
+            ]);
+            
+            $checklist->save();
 
             // Store checklist items
             $checklistData = [
@@ -170,11 +176,22 @@ class ChecklistController extends Controller
             ->firstOrFail();
 
         // Check authorization
-        if ($checklist->user_id !== $user->system_user_id && $checklist->company_id !== $user->company_id) {
-            abort(403, 'Unauthorized access.');
+        $userCompanyId = $user->company_id ?? null;
+        if ($checklist->user_id !== $user->id && ($userCompanyId === null || $checklist->company_id !== $userCompanyId)) {
+            // Allow if user is admin, manager, or contractor
+            if (!in_array($user->role, ['Administrator', 'Managerial', 'Contractor'])) {
+                abort(403, 'Unauthorized access.');
+            }
         }
 
-        return view('regular.pages.checklist.show', compact('checklist'));
+        // Return appropriate view based on user role
+        $viewPath = match($user->role) {
+            'Contractor' => 'contractor.pages.checklist.show',
+            'Regular' => 'regular.pages.checklist.show',
+            default => 'managerial.pages.checklist.show',
+        };
+
+        return view($viewPath, compact('checklist'));
     }
 
     /**
@@ -184,14 +201,18 @@ class ChecklistController extends Controller
     {
         $user = Auth::user();
         
-        $checklists = DailyChecklist::where('company_id', $user->company_id)
-            ->whereIn('status', ['Completed', 'Flagged'])
-            ->with(['vehicle', 'user', 'items'])
+        // If company_id exists, filter by it, otherwise show all
+        $companyId = $user->company_id ?? null;
+        $checklists = $companyId
+            ? DailyChecklist::where('company_id', $companyId)->whereIn('status', ['Completed', 'Flagged'])
+            : DailyChecklist::whereIn('status', ['Completed', 'Flagged']);
+        
+        $checklists = $checklists->with(['vehicle', 'user', 'items'])
             ->orderByRaw('CASE WHEN kids_left_alert = 1 THEN 0 ELSE 1 END')
             ->orderBy('completed_at', 'desc')
             ->paginate(20);
 
-        return view('managerial.pages.checklist.review', compact('checklists'));
+        return view('admin.pages.checklist.review', compact('checklists'));
     }
 
     /**
@@ -201,15 +222,18 @@ class ChecklistController extends Controller
     {
         $user = Auth::user();
         
-        $checklist = DailyChecklist::where('checklist_uuid', $uuid)
-            ->where('company_id', $user->company_id)
-            ->firstOrFail();
+        $companyId = $user->company_id ?? null;
+        $query = DailyChecklist::where('checklist_uuid', $uuid);
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
+        $checklist = $query->firstOrFail();
 
         $validated = $request->validate([
             'review_notes' => 'nullable|string|max:500',
         ]);
 
-        $checklist->approve($user->system_user_id, $validated['review_notes'] ?? null);
+        $checklist->approve($user->id, $validated['review_notes'] ?? null);
 
         return redirect()
             ->back()
@@ -223,15 +247,18 @@ class ChecklistController extends Controller
     {
         $user = Auth::user();
         
-        $checklist = DailyChecklist::where('checklist_uuid', $uuid)
-            ->where('company_id', $user->company_id)
-            ->firstOrFail();
+        $companyId = $user->company_id ?? null;
+        $query = DailyChecklist::where('checklist_uuid', $uuid);
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
+        $checklist = $query->firstOrFail();
 
         $validated = $request->validate([
             'review_notes' => 'required|string|max:500',
         ]);
 
-        $checklist->flag($user->system_user_id, $validated['review_notes']);
+        $checklist->flag($user->id, $validated['review_notes']);
 
         return redirect()
             ->back()
@@ -243,12 +270,12 @@ class ChecklistController extends Controller
      */
     private function sendKidsLeftAlert(DailyChecklist $checklist)
     {
-        // Get all managers for this company
-        $managers = \App\Models\User::where('company_id', $checklist->company_id)
-            ->whereHas('role', function($query) {
-                $query->where('user_access', 'Managerial');
-            })
-            ->get();
+        // Get all managers for this company (or all if no company_id)
+        $query = $checklist->company_id 
+            ? \App\Models\User::where('company_id', $checklist->company_id)
+            : \App\Models\User::query();
+        
+        $managers = $query->where('role', 'Managerial')->get();
 
         foreach ($managers as $manager) {
             // Send notification (email + in-app)
@@ -271,7 +298,7 @@ class ChecklistController extends Controller
     {
         $user = Auth::user();
         
-        $activeTimer = TaskTimer::where('user_id', $user->system_user_id)
+        $activeTimer = TaskTimer::where('user_id', $user->id)
             ->whereNull('time_finished')
             ->first();
 

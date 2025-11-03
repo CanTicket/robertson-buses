@@ -72,14 +72,26 @@ class VehicleController extends Controller
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
+        // Get statistics for this vehicle
+        $totalChecklists = DailyChecklist::where('vehicle_id', $id)->count();
+        $approvedChecklists = DailyChecklist::where('vehicle_id', $id)->where('status', 'Approved')->count();
+        $flaggedChecklists = DailyChecklist::where('vehicle_id', $id)->where('status', 'Flagged')->count();
+        $kidsAlerts = DailyChecklist::where('vehicle_id', $id)->where('kids_left_alert', true)->count();
+        
         // Get recent checklists for this vehicle
         $recentChecklists = DailyChecklist::where('vehicle_id', $id)
-            ->with(['user', 'reviewer'])
+            ->with(['user', 'reviewer', 'items'])
             ->orderBy('completed_at', 'desc')
-            ->limit(20)
-            ->get();
+            ->paginate(15);
 
-        return view('admin.pages.vehicles.show', compact('vehicle', 'recentChecklists'));
+        return view('admin.pages.vehicles.show', compact(
+            'vehicle', 
+            'recentChecklists',
+            'totalChecklists',
+            'approvedChecklists',
+            'flaggedChecklists',
+            'kidsAlerts'
+        ));
     }
 
     /**

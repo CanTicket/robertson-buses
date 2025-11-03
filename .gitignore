@@ -1,0 +1,122 @@
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/vendor
+.env
+.env.backup
+.env.production
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+/.fleet
+/.idea
+/.vscode
+
+# Laravel specific
+/bootstrap/cache/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+*.log
+
+# Big Data Files - Database Dumps & Backups
+*.sql
+*.sql.gz
+*.sql.zip
+*.dump
+*.backup
+*.bak
+*.db
+*.db-shm
+*.db-wal
+database/*.sql
+database/*.sqlite
+database/*.dump
+database/backups/
+database/exports/
+*.sqlite3
+
+# Big Data Files - Media & Images (Large)
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.mkv
+*.m4v
+*.3gp
+*.mpg
+*.mpeg
+*.ts
+*.m2ts
+*.vob
+
+# Large Archive Files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.bz2
+*.xz
+*.gz
+backups/
+exports/
+*.backup.zip
+*.backup.tar.gz
+
+# Large Data Files - Spreadsheets & Exports
+*.xlsx
+*.xls
+*.csv
+*.xlsb
+*.xlsm
+data/
+exports/
+reports/
+*.export
+*.export.csv
+*.export.xlsx
+
+# Large Image Files (if over certain size)
+# Note: Regular images should be tracked, but very large ones might be excluded
+# Uncomment if you need to exclude large images:
+# *.psd
+# *.ai
+# *.eps
+
+# Temporary & Cache Files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Storage large files
+/storage/app/public/checklist_photos/*
+!/storage/app/public/checklist_photos/.gitignore
+/storage/app/public/uploads/*
+!/storage/app/public/uploads/.gitignore
+
+# Build & Compiled Files
+/dist
+/build
+*.map
+
+# IDE & Editor Files
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+

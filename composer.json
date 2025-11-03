@@ -1,5 +1,5 @@
 {
-    "name": "buses-mvp",
+    "name": "robertson/buses",
     "version": "1.0.0",
     "description": "Bus company operations and staff management platform - built on CanTicket Laravel 11 foundation",
     "type": "project",
